@@ -13,6 +13,7 @@ namespace calibration
   struct quote 
   { 
     double strike;
+    std::string type;
     double maturity;
     double bid;
     double ask;
@@ -64,6 +65,7 @@ calibration::quote_list ReadQuotes(const char* file)
     ss << s;
 
     ss >> temp.strike;
+    ss >> temp.type;
     ss >> temp.maturity;
     ss >> temp.bid;
     ss >> temp.ask;

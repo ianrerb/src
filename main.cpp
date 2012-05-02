@@ -19,6 +19,7 @@ double VGSA_error( quote_list &quotes, param_list &params )
   
   for(quote_list_iterator it = quotes.begin(); it!=quotes.end(); ++it)
   {  
+    if(it->type == "Call"){ Engine.Alpha(1.5); } else { Engine.Alpha(-1.5); }
     PriceModel.RiskFreeRate(it->rate);
     PriceModel.DividendRate(it-> q);
     double mat = (it->maturity)/365.0;
@@ -36,12 +37,12 @@ int main()
 { 
   vector<param_list> grid_params;
   
-  grid_params.push_back(ParameterRange(DIM,.03,.08)); //sigma
-  grid_params.push_back(ParameterRange(DIM,.2,.25));  //nu
-  grid_params.push_back(ParameterRange(DIM,-.13,-.08));  //theta
-  grid_params.push_back(ParameterRange(DIM,4,5));  //kappa
-  grid_params.push_back(ParameterRange(DIM,3,3.5));    //eta
-  grid_params.push_back(ParameterRange(DIM,4.5,5)); //lambda
+  grid_params.push_back(ParameterRange(DIM,.05,.3)); //sigma
+  grid_params.push_back(ParameterRange(DIM,.1,.3));  //nu
+  grid_params.push_back(ParameterRange(DIM,-.15,0));  //theta
+  grid_params.push_back(ParameterRange(DIM,1,10));  //kappa
+  grid_params.push_back(ParameterRange(DIM,2,4));    //eta
+  grid_params.push_back(ParameterRange(DIM,1,20)); //lambda
   
   param_list optimized_list = simple_grid_search(grid_params,"prices",VGSA_error); 
  
