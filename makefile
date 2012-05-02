@@ -5,7 +5,7 @@ LNK= g++ -o
 main : $(OBJ)
 	$(LNK) main $(OBJ) -lfftw3 -lm
 
-main.o : main.cpp calibration.h
+main.o : main.cpp calibration.h surfaces.h
 	$(CPL) main.cpp
 
 VGSA.o : ../../transform_model/src/VGSA.cpp
