@@ -6,8 +6,8 @@
 #include<vector>
 #include<cmath>
 #include "../../transform_model/include/transform.h"
-#define STRIKE_DELTA 10.0
-#define TIME_DELTA .1
+#define STRIKE_DELTA .01 
+#define TIME_DELTA .0001
 
 
 namespace surface 
@@ -19,13 +19,13 @@ namespace surface
     double div_rate;  
   }; 
   
-  typedef std::vector<rate_data> rate_model;
+  typedef std::vector<rate_data> rate_curve;
   typedef std::vector<rate_data>::iterator rate_model_iterator;
 }
 
-surface::rate_model ReadRates(const char* file)
+surface::rate_curve ReadRates(const char* file)
 {  
-  surface::rate_model rates;
+  surface::rate_curve rates;
   std::ifstream infile(file);
   std::string s;
 
@@ -40,8 +40,6 @@ surface::rate_model ReadRates(const char* file)
     ss >> temp.maturity;
     ss >> temp.rate;
     ss >> temp.div_rate;
-    temp.rate = .005;
-    temp.div_rate = .01;
     rates.push_back(temp);
   }
   
@@ -51,8 +49,8 @@ surface::rate_model ReadRates(const char* file)
 double CalendarSpread(double spot, double strike, transform_base &TheEngine, pricemodel &TheModel)
 {  
   double t = TheModel.TimeToExpiry(); 
-  double C1 = exp(t*(TheModel.DividendRate() - TheModel.RiskFreeRate()));
-  double C2 = C1*exp(TIME_DELTA*(TheModel.DividendRate() - TheModel.RiskFreeRate()));
+  double C1 = exp(-t * TheModel.RiskFreeRate());
+  double C2 = C1*exp(-TIME_DELTA * TheModel.RiskFreeRate());
   
   double F1 = TheEngine.Price(spot,strike,C1,TheModel);
   
@@ -76,39 +74,65 @@ double ButterflySpread(double spot, double strike, double C, transform_base &The
 
 double SecondDer(double spot, double strike, double C, transform_base &TheEngine, pricemodel &TheModel)
 {  
-  double der1 = ButterflySpread(spot,strike,C,TheEngine, TheModel);
-  double der2 = ButterflySpread(spot,strike+STRIKE_DELTA, C, TheEngine, TheModel);
-  return( (der2 - der1)/STRIKE_DELTA );
+  double val1 = TheEngine.Price(spot,strike+STRIKE_DELTA,C,TheModel);
+  double val2 = TheEngine.Price(spot,strike-STRIKE_DELTA,C,TheModel);
+  double val3 = TheEngine.Price(spot,strike,C,TheModel);
+  
+  double retval = std::abs( (val1 + val2 - 2.0*val3 )/(STRIKE_DELTA*STRIKE_DELTA) );
+  return retval;
 }
 
-double ComputeLocalVolatility(double spot, double strike, transform_base &TheEngine, pricemodel &TheModel)
+double ComputeLocalVolatility(double spot, double strike, double rate, double div_rate, double T, transform_base &TheEngine, pricemodel &TheModel, bool verbose = false)
 { 
-  double C = exp(TheModel.TimeToExpiry()*(TheModel.DividendRate()-TheModel.RiskFreeRate()));
+  //save old values
+  double old_time_val = TheModel.TimeToExpiry();
+  double old_rate_val = TheModel.RiskFreeRate();
+  double old_div_val = TheModel.DividendRate();
+
+  //set model values
+  TheModel.TimeToExpiry(T);
+  TheModel.RiskFreeRate(rate);
+  TheModel.DividendRate(div_rate);
+
+  //compute relevant values for local vol function
+  double C = exp(-TheModel.TimeToExpiry()*TheModel.RiskFreeRate());
   double price = TheEngine.Price(spot,strike, C, TheModel);
   double cal_spread = CalendarSpread(spot,strike,TheEngine,TheModel);
   double butterfly_spread = ButterflySpread(spot,strike,C,TheEngine,TheModel);
-      double second_derivative = SecondDer(spot,strike,C,TheEngine,TheModel);
-      
-      double vol = cal_spread + (TheModel.RiskFreeRate() - TheModel.DividendRate())*strike*butterfly_spread;
-	     //std::cout<<"vol1: "<<vol<<" ";
-	     vol += TheModel.DividendRate()*price;
-	     //std::cout<<"vol2: "<<vol<<" ";
-	     vol /= (.5*strike*strike)*second_derivative;
-	     // std::cout<<"vol3: "<<vol<<" ";
-	     vol = pow(vol,.5);
-	     //std::cout<<"vol4: "<<vol<<" ";
-  /*
-  std::cout<<"=== "
-	   <<"ca_spr: "<< cal_spread <<" "
-	   <<"but spr: "<< butterfly_spread <<" "
-	   <<"2nd der: "<< second_derivative <<" ";
-*/
+  double second_derivative = SecondDer(spot,strike,C,TheEngine,TheModel);
+
+  //compute local vol function      
+  double vol = cal_spread + (TheModel.RiskFreeRate() - TheModel.DividendRate())*strike*butterfly_spread;
+  if(verbose){ std::cout<<"vol1: "<<vol<<"\n" ; }
+	     
+  vol += TheModel.DividendRate()*price;
+  if(verbose){ std::cout<<"vol2: "<<vol<<"\n"; }
+	     
+  vol /= (.5*strike*strike)*second_derivative;
+  if(verbose){ std::cout<<"vol3: "<<vol<<"\n"; }
+  
+  vol = pow(vol,.5);	     
+  if(verbose){ std::cout<<"vol4: "<<vol<<"\n"; }
+  
+  if(verbose)
+  {
+    std::cout<<"=== "
+	     <<"ca_spr: "<< cal_spread <<" "
+	     <<"but spr: "<< butterfly_spread <<" "
+	     <<"2nd der: "<< second_derivative <<" ";
+  }
+
+//reset model params
+  TheModel.TimeToExpiry(old_time_val); 
+  TheModel.RiskFreeRate(old_rate_val);
+  TheModel.DividendRate(old_div_val);
+  
+  //return vol
   return vol;
 }
 
-void VolSurface(double spot, std::vector<double> strikes, transform_base &TheEngine, pricemodel &TheModel, const char* file)
+void VolSurface(double spot, std::vector<double> strikes, surface::rate_curve rates, transform_base &TheEngine, pricemodel &TheModel, const char* file)
 {  
-  surface::rate_model rates = ReadRates(file);
   const unsigned int T_count = rates.size();
   const unsigned int K_count = strikes.size();
  
@@ -117,16 +141,13 @@ void VolSurface(double spot, std::vector<double> strikes, transform_base &TheEng
   
   for(unsigned int i = 0; i!= T_count; ++i)
   {  
-    TheModel.TimeToExpiry(rates[i].maturity);
-    TheModel.RiskFreeRate(rates[i].rate);
-    TheModel.DividendRate(rates[i].div_rate);
-    
+        
     for(unsigned int j = 0; j!=K_count; ++j)
     {       
       	          
       std::cout<<strikes[j]<<"\t"
 	       <<rates[i].maturity<<"\t"
-	       <<ComputeLocalVolatility(spot,strikes[j],TheEngine,TheModel)<<"\n";	  
+	       <<ComputeLocalVolatility(spot,strikes[j],rates[i].rate, rates[i].div_rate, rates[i].maturity, TheEngine, TheModel)<<"\n";	  
     }
     if(K_count > 1){  std::cout<<"\n"; }
   }
@@ -136,7 +157,7 @@ void VolSurface(double spot, std::vector<double> strikes, transform_base &TheEng
 
 void PremiumSurface(double spot, std::vector<double> strikes, transform_base &TheEngine, pricemodel &TheModel, const char* file)
 {  
-  surface::rate_model rates = ReadRates(file);
+  surface::rate_curve rates = ReadRates(file);
   
   const unsigned int T_count = rates.size();
   const unsigned int K_count = strikes.size();

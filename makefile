@@ -1,4 +1,4 @@
-OBJ= main.o VGSA.o FFT.o FrFFT.o
+OBJ= main.o VGSA.o FFT.o FrFFT.o GBM.o
 CPL= g++ -c
 LNK= g++ -o
 
@@ -10,6 +10,9 @@ main.o : main.cpp calibration.h surfaces.h
 
 VGSA.o : ../../transform_model/src/VGSA.cpp
 	$(CPL) ../../transform_model/src/VGSA.cpp
+
+GBM.o : ../../transform_model/src/GBM.cpp
+	$(CPL) ../../transform_model/src/GBM.cpp
 
 FFT.o : ../../transform_model/src/FFT.cpp 
 	$(CPL) ../../transform_model/src/FFT.cpp 
